@@ -1,0 +1,8 @@
+# A local practice cluster: one "brain" node and one worker node,
+# each running as a Docker container on this laptop.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: streetcam
+nodes:
+  - role: control-plane
+  - role: worker

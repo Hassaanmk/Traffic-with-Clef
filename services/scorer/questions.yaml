@@ -1,0 +1,32 @@
+# Question schema sent to Clef-flash with every clip.
+# Bump `version` whenever wording or options change; it is stored with each answer.
+version: 1
+
+questions:
+  usable:
+    type: noul
+    instructions: Is the camera view clear and usable, not blank, frozen, blurred or blocked?
+  congestion:
+    type: score
+    instructions: How congested is the main carriageway?
+    criteria: [Empty, "Light, free-flowing", Moderate, "Heavy, slow-moving", Standstill queue]
+  moving:
+    type: noul
+    instructions: Comparing the frames, are the vehicles on the main carriageway moving?
+  wet:
+    type: noul
+    instructions: Is it raining, or is the road surface visibly wet?
+  light:
+    type: choice
+    instructions: What are the lighting conditions?
+    criteria:
+      day: Daylight
+      twilight: Dawn or dusk
+      night: Night, street lighting
+  blocked:
+    type: noul
+    instructions: Is any lane blocked by a stopped vehicle, crash, debris or roadworks?
+  heavy_vehicles:
+    type: score
+    instructions: What share of the vehicles are lorries or buses?
+    criteria: [None, A few, About half, Most]

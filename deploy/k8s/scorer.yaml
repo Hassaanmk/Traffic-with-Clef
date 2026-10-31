@@ -1,0 +1,52 @@
+# Scorer: takes clips from Redis, asks Clef-flash, saves answers to Postgres.
+# No replicas field: KEDA (deploy/keda/) decides how many pods run, from 0 to 3.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scorer
+  namespace: streetcam
+spec:
+  selector:
+    matchLabels: {app: scorer}
+  template:
+    metadata:
+      labels: {app: scorer}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: scorer
+          image: streetcam/scorer:dev
+          imagePullPolicy: Never       # use the image loaded with `kind load`, never download
+          ports:
+            - name: metrics
+              containerPort: 9100
+          envFrom:
+            - configMapRef: {name: streetcam}
+            - secretRef: {name: cloudflare}    # CF_ACCOUNT_ID, CF_API_TOKEN
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: postgres, key: POSTGRES_PASSWORD}
+            # $(POSTGRES_PASSWORD) is filled in by Kubernetes from the line above.
+            - name: DATABASE_URL
+              value: postgresql://streetcam:$(POSTGRES_PASSWORD)@postgres:5432/streetcam
+          readinessProbe:
+            httpGet: {path: /metrics, port: metrics}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 256Mi}
+---
+# Gives the scorer's metrics a fixed name, for Prometheus later.
+apiVersion: v1
+kind: Service
+metadata:
+  name: scorer
+  namespace: streetcam
+  labels: {app: scorer}
+spec:
+  selector: {app: scorer}
+  ports:
+    - name: metrics
+      port: 9100

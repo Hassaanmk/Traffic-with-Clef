@@ -1,0 +1,6 @@
+# A folder for everything this project runs, so it stays apart from
+# Kubernetes' own system pods and from KEDA.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: streetcam

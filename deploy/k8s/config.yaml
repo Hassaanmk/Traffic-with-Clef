@@ -1,0 +1,11 @@
+# Non-secret settings, handed to the grabber and scorer as environment variables.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streetcam
+  namespace: streetcam
+data:
+  CAMERAS: "JamCams_00001.06514,JamCams_00001.08750"
+  REDIS_URL: "redis://redis:6379/0"
+  DAILY_NEURON_LIMIT: "10000"
+  PAUSE_AT: "0.95"

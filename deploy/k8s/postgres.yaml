@@ -1,0 +1,67 @@
+# Postgres: keeps every answer. A StatefulSet gives the pod its own disk,
+# which survives restarts. db/schema.sql runs once, on first start.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: streetcam
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: streetcam
+            - name: POSTGRES_DB
+              value: streetcam
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: postgres, key: POSTGRES_PASSWORD}
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: schema
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: [pg_isready, -U, streetcam, -d, streetcam]
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {memory: 512Mi}
+      volumes:
+        - name: schema
+          configMap:
+            name: postgres-schema
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 1Gi
+---
+# Gives Postgres the fixed name "postgres" inside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: streetcam
+spec:
+  clusterIP: None
+  selector: {app: postgres}
+  ports:
+    - port: 5432

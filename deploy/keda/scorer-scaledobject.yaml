@@ -1,0 +1,21 @@
+# KEDA: watch the Redis "clips" list and run one scorer pod per waiting clip,
+# between 0 and 3. Applied after KEDA is installed, because Kubernetes only
+# understands "ScaledObject" once KEDA has taught it the new type.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: scorer
+  namespace: streetcam
+spec:
+  scaleTargetRef:
+    name: scorer
+  minReplicaCount: 0      # no clips waiting, no pods
+  maxReplicaCount: 3      # never more than 3
+  pollingInterval: 15     # look at Redis every 15 s
+  cooldownPeriod: 120     # queue empty for 2 min, then scale to 0
+  triggers:
+    - type: redis
+      metadata:
+        address: redis.streetcam.svc.cluster.local:6379
+        listName: clips
+        listLength: "1"   # one pod per waiting clip

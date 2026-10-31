@@ -1,0 +1,30 @@
+# Grabber: started every 5 minutes, checks the cameras, queues new clips, exits.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: grabber
+  namespace: streetcam
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid        # never two grabbers at once
+  startingDeadlineSeconds: 120     # if a run is missed by over 2 min, skip it
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1              # retry a failed run once
+      activeDeadlineSeconds: 120   # a run that hangs is killed after 2 min
+      template:
+        metadata:
+          labels: {app: grabber}
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: grabber
+              image: streetcam/grabber:dev
+              imagePullPolicy: Never   # use the image loaded with `kind load`, never download
+              envFrom:
+                - configMapRef: {name: streetcam}
+              resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {memory: 128Mi}
