@@ -14,6 +14,7 @@ flowchart LR
     S -->|4 frames + 7 questions| C[Clef-flash<br/>Cloudflare Workers AI]
     C -->|probabilities| S
     S -->|answers| P[(Postgres)]
+    P --> D[dashboard<br/>localhost:8080]
 ```
 
 ## What the model answers
@@ -55,6 +56,7 @@ make status               # pods, CronJob, ScaledObject
 make grab                 # run the grabber now instead of waiting
 make logs                 # watch scorers
 make db                   # psql: select * from decisions;
+make dashboard            # live results page on http://localhost:8080
 make down                 # delete the cluster
 ```
 
@@ -75,6 +77,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 | scorer | Deployment, scaled by KEDA | One clip at a time per pod; finishes its clip on SIGTERM; retries 429 and 5xx up to 3 times |
 | KEDA | ScaledObject | One pod per waiting clip, 0 to 3, back to 0 after 2 min of empty queue |
 | Postgres | StatefulSet + 1 GiB volume | `decisions` table, unique per camera and clip, so retries never double-insert |
+| dashboard | Deployment + Service | Web page: live camera photo, Clef's latest answers, congestion chart, today's clips, neurons and latency; refreshes every 30 s |
 | Secrets | Secret | Cloudflare token copied from `.env`; Postgres password generated in the cluster |
 
 The scorer counts neurons per UTC day in Redis and pauses at 95% of the free allowance (`PAUSE_AT`, `DAILY_NEURON_LIMIT`).
@@ -84,9 +87,10 @@ The scorer counts neurons per UTC day in Redis and pauses at 95% of the free all
 ```
 services/grabber/      grabber.py, Dockerfile
 services/scorer/       scorer.py, decision_client.py, questions.yaml, Dockerfile
+services/dashboard/    app.py, static/index.html, Dockerfile
 db/schema.sql          decisions table
 deploy/kind/           kind cluster config
-deploy/k8s/            namespace, config, Redis, Postgres, grabber, scorer
+deploy/k8s/            namespace, config, Redis, Postgres, grabber, scorer, dashboard
 deploy/keda/           ScaledObject (applied after KEDA is installed)
 spike/spike.py         day 1 test script: one clip in, answers out
 Makefile

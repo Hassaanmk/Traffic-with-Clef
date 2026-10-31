@@ -9,3 +9,4 @@ data:
   REDIS_URL: "redis://redis:6379/0"
   DAILY_NEURON_LIMIT: "10000"
   PAUSE_AT: "0.95"
+  FRAME_TIMES: "1.0,3.5,6.0,8.5"   # seconds into each clip sent to Clef; the dashboard marks them

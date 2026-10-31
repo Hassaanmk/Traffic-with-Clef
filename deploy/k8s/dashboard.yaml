@@ -1,0 +1,49 @@
+# Dashboard: a web page with Clef-flash's latest answers per camera, read from Postgres.
+# Open it with `make dashboard`, then http://localhost:8080
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: streetcam
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: dashboard}
+  template:
+    metadata:
+      labels: {app: dashboard}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: dashboard
+          image: streetcam/dashboard:dev
+          imagePullPolicy: Never       # use the image loaded with `kind load`, never download
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef: {name: streetcam}   # DAILY_NEURON_LIMIT
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: postgres, key: POSTGRES_PASSWORD}
+            - name: DATABASE_URL
+              value: postgresql://streetcam:$(POSTGRES_PASSWORD)@postgres:5432/streetcam
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: streetcam
+spec:
+  selector: {app: dashboard}
+  ports:
+    - name: http
+      port: 8080

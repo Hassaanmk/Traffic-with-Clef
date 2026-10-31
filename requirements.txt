@@ -1,2 +1,6 @@
-requests==2.34.2
-PyYAML==6.0.3
+# Local development: everything the spike script and all three services import,
+# so the editor and local runs resolve every module. Each service's image
+# installs only its own file.
+-r services/grabber/requirements.txt
+-r services/scorer/requirements.txt
+-r services/dashboard/requirements.txt

@@ -6,11 +6,12 @@ London TfL JamCam clips scored by Clef-flash (Cloudflare Workers AI) every 5 min
 
 ```bash
 make up        # kind cluster, KEDA, secrets, images, deploy (from scratch)
-make deploy    # rebuild both images, kind load, kubectl apply, restart scorer
+make deploy    # rebuild all three images, kind load, kubectl apply, restart scorer
 make status    # pods, CronJob, Jobs, ScaledObject in namespace streetcam
 make grab      # run the grabber now
 make logs      # follow scorer logs
 make db        # psql into postgres-0
+make dashboard # port-forward the results page to http://localhost:8080
 make down      # delete the cluster
 
 .venv/bin/python spike/spike.py --find "<name>"            # look up camera ids
@@ -23,6 +24,7 @@ After any change under `services/`, run `make deploy`; the cluster runs images l
 
 - `services/grabber/grabber.py`: runs once per CronJob tick, queues changed clips, exits.
 - `services/scorer/scorer.py`: long-running loop; `decision_client.py` wraps the Clef-flash call; `questions.yaml` is the question schema.
+- `services/dashboard/`: stdlib HTTP server; `/api/summary` reads Postgres, `static/index.html` renders it (Chart.js from cdnjs). The camera photo is TfL's live JPEG, not the scored frame.
 - `db/schema.sql`: `decisions` table. Runs only on Postgres's first start (mounted into `/docker-entrypoint-initdb.d`); a schema change needs `make down && make up` or a manual migration.
 - `deploy/k8s/`: plain YAML, applied with `kubectl apply -f`. `deploy/keda/` is separate because the ScaledObject type exists only after KEDA is installed.
 - `spike/spike.py`: standalone day 1 test script, not used by the cluster.

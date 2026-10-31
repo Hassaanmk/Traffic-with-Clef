@@ -3,13 +3,14 @@
 #   make deploy   rebuild images and apply changes
 #   make status   what is running
 #   make grab     run the grabber now instead of waiting for the 5-minute mark
+#   make dashboard  open the live results page on http://localhost:8080
 #   make down     delete the whole cluster
 
 CLUSTER := streetcam
 NS := streetcam
 KEDA_VERSION := 2.17.0
 
-.PHONY: up cluster keda secrets images deploy status logs grab db down
+.PHONY: up cluster keda secrets images deploy status logs grab db dashboard down
 
 up: cluster keda secrets deploy
 
@@ -31,12 +32,13 @@ secrets:
 images:
 	docker build -t streetcam/grabber:dev services/grabber
 	docker build -t streetcam/scorer:dev services/scorer
-	kind load docker-image streetcam/grabber:dev streetcam/scorer:dev --name $(CLUSTER)
+	docker build -t streetcam/dashboard:dev services/dashboard
+	kind load docker-image streetcam/grabber:dev streetcam/scorer:dev streetcam/dashboard:dev --name $(CLUSTER)
 
 deploy: images
 	kubectl apply -f deploy/k8s/
 	kubectl apply -f deploy/keda/
-	kubectl -n $(NS) rollout restart deployment/scorer
+	kubectl -n $(NS) rollout restart deployment/scorer deployment/dashboard
 
 status:
 	kubectl -n $(NS) get pods,cronjobs,jobs,scaledobjects
@@ -49,6 +51,10 @@ grab:
 
 db:
 	kubectl -n $(NS) exec -it postgres-0 -- psql -U streetcam -d streetcam
+
+dashboard:
+	@echo "Open http://localhost:8080 (Ctrl+C to stop)"
+	kubectl -n $(NS) port-forward svc/dashboard 8080:8080
 
 down:
 	kind delete cluster --name $(CLUSTER)

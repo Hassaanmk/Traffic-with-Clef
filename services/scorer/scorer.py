@@ -28,7 +28,8 @@ from decision_client import DecisionError, WorkersAIClient
 QUEUE = "clips"
 PROCESSING = "processing"
 MAX_ATTEMPTS = 3
-FRAME_TIMES = [1.0, 3.5, 6.0, 8.5]  # seconds into the ~9.5 s clip
+# Seconds into the ~9.5 s clip; the dashboard reads the same FRAME_TIMES to mark them.
+FRAME_TIMES = [float(t) for t in os.environ.get("FRAME_TIMES", "1.0,3.5,6.0,8.5").split(",")]
 NEURONS_PER_TOKEN = 3455 / 1_000_000
 QUESTIONS_FILE = Path(__file__).resolve().parent / "questions.yaml"
 
