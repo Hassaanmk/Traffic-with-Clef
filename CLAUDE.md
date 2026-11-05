@@ -12,6 +12,8 @@ make grab      # run the grabber now
 make logs      # follow scorer logs
 make db        # psql into postgres-0
 make dashboard # port-forward the results page to http://localhost:8080
+make migrate   # apply db/migrations/*.sql to the running database (make deploy runs it)
+make test      # ruff + pytest, no cluster needed (pip install -r requirements-dev.txt first)
 make down      # delete the cluster
 
 .venv/bin/python spike/spike.py --find "<name>"            # look up camera ids
@@ -24,10 +26,11 @@ After any change under `services/`, run `make deploy`; the cluster runs images l
 
 - `services/grabber/grabber.py`: runs once per CronJob tick, queues changed clips, exits.
 - `services/scorer/scorer.py`: long-running loop; `decision_client.py` wraps the Clef-flash call; `questions.yaml` is the question schema.
-- `services/dashboard/`: stdlib HTTP server; `/api/summary` reads Postgres, `static/index.html` renders it (Chart.js from cdnjs). The camera photo is TfL's live JPEG, not the scored frame.
-- `db/schema.sql`: `decisions` table. Runs only on Postgres's first start (mounted into `/docker-entrypoint-initdb.d`); a schema change needs `make down && make up` or a manual migration.
+- `services/dashboard/`: stdlib HTTP server. `/api/summary` reads Postgres plus `live:<camera>` from Redis; `/api/events` relays the Redis `streetcam:events` pub/sub channel as Server-Sent Events; `/api/frame/<etag>/<i>` serves frames from Redis. `static/index.html` renders it (Chart.js from cdnjs). The video is TfL's current mp4; the page compares its ETag with the scored one.
+- `db/schema.sql`: `decisions` table, runs only on Postgres's first start. Changes to an existing database go in `db/migrations/NNN_*.sql`, written to be safe to re-run (`IF NOT EXISTS`); `make deploy` applies them. Update `schema.sql` too, so fresh clusters match.
 - `deploy/k8s/`: plain YAML, applied with `kubectl apply -f`. `deploy/keda/` is separate because the ScaledObject type exists only after KEDA is installed.
 - `spike/spike.py`: standalone day 1 test script, not used by the cluster.
+- `tests/`: pytest unit tests with an in-memory Redis stand-in (`conftest.FakeRedis`); no cluster, network or Cloudflare calls. Run `make test` before committing.
 
 ## Things that are easy to get wrong
 
@@ -37,10 +40,13 @@ After any change under `services/`, run `make deploy`; the cluster runs images l
 - **Scaling:** the scorer Deployment has no `replicas` field on purpose; KEDA owns it (0 to 3, `listLength: "1"`). Adding `replicas` makes every apply fight KEDA.
 - **Images:** pods use `imagePullPolicy: Never` with `:dev` tags. `ErrImageNeverPull` means the image was not loaded into kind.
 - **Startup order:** the scorer retries Redis and Postgres until they answer; keep that, pods can start before their dependencies.
+- **Redis timeouts:** redis-py 8 closes socket reads after 5 s by default. The scorer's `BLMOVE` blocks for `BLOCK_SECONDS`, so its client sets `socket_timeout` above that; otherwise an empty queue crashes the pod.
+- **Per-frame calls:** each clip makes 1 clip call + 1 call per frame, in parallel (`questions` and `frame_questions` in `questions.yaml`). Up to 10 concurrent calls can hit Cloudflare's `429 Capacity temporarily exceeded`; `decision_client` retries 429/5xx twice with backoff, and a frame that still fails is stored as `status: failed` without failing the clip. `WorkersAIClient` keeps one HTTP session per thread.
+- **Live state:** the scorer writes `live:<camera>` (24 h) and `frame:<etag>:<i>` (6 h) to Redis and publishes every change on `streetcam:events`. Frames are never written to Postgres.
 
 ## Budget
 
-Cloudflare gives 10,000 free neurons per day, reset at 00:00 UTC; Clef-flash costs $0.038 per million input tokens (~3,455 neurons per million). Measured: 102 tokens per 352x288 frame, 808 for the state and 7 questions, ~1,215 per 4-frame call. With 2 cameras every 5 minutes that is ~24% of the allowance. Check `usage.input_tokens` before adding cameras, frames or questions. The scorer pauses at `PAUSE_AT` (95%) of `DAILY_NEURON_LIMIT`, counted in Redis.
+Cloudflare gives 10,000 free neurons per day, reset at 00:00 UTC; Clef-flash costs $0.038 per million input tokens (~3,455 neurons per million). Measured: 102 tokens per 352x288 frame, 808 for the state and 7 questions, ~1,215 per 4-frame clip call, ~440 per single-frame call; ~2,970 per clip in total. With 2 cameras every 5 minutes that is ~59% of the allowance. Check `usage.input_tokens` before adding cameras, frames or questions. The scorer pauses at `PAUSE_AT` (95%) of `DAILY_NEURON_LIMIT`, counted in Redis.
 
 ## Clef-flash response shape
 

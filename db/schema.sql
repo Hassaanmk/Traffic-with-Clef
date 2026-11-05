@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS decisions (
     input_tokens      integer     NOT NULL,
     latency_ms        integer     NOT NULL,
     frames            smallint    NOT NULL,
+    frame_answers     jsonb,                         -- per-frame answers and latencies (questions v2+)
     UNIQUE (camera_id, clip_etag)                     -- a retried job can't insert twice
 );
 

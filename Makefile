@@ -4,13 +4,15 @@
 #   make status   what is running
 #   make grab     run the grabber now instead of waiting for the 5-minute mark
 #   make dashboard  open the live results page on http://localhost:8080
+#   make migrate  apply db/migrations/*.sql to the running database (safe to repeat)
+#   make test     unit tests and lint, no cluster needed
 #   make down     delete the whole cluster
 
 CLUSTER := streetcam
 NS := streetcam
 KEDA_VERSION := 2.17.0
 
-.PHONY: up cluster keda secrets images deploy status logs grab db dashboard down
+.PHONY: up cluster keda secrets images deploy migrate status logs grab db dashboard test down
 
 up: cluster keda secrets deploy
 
@@ -38,7 +40,12 @@ images:
 deploy: images
 	kubectl apply -f deploy/k8s/
 	kubectl apply -f deploy/keda/
+	$(MAKE) migrate
 	kubectl -n $(NS) rollout restart deployment/scorer deployment/dashboard
+
+migrate:
+	kubectl -n $(NS) wait --for=condition=Ready pod/postgres-0 --timeout=180s
+	@for f in db/migrations/*.sql; do echo "applying $$f"; kubectl -n $(NS) exec -i postgres-0 -- psql -q -v ON_ERROR_STOP=1 -U streetcam -d streetcam < $$f || exit 1; done
 
 status:
 	kubectl -n $(NS) get pods,cronjobs,jobs,scaledobjects
@@ -55,6 +62,10 @@ db:
 dashboard:
 	@echo "Open http://localhost:8080 (Ctrl+C to stop)"
 	kubectl -n $(NS) port-forward svc/dashboard 8080:8080
+
+test:
+	.venv/bin/ruff check .
+	.venv/bin/python -m pytest -q
 
 down:
 	kind delete cluster --name $(CLUSTER)

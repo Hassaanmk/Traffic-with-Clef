@@ -5,9 +5,14 @@ by implementing the same decide() method.
 """
 
 import base64
+import logging
+import random
+import threading
 import time
 
 import requests
+
+log = logging.getLogger("decision_client")
 
 CF_URL = "https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/@cf/cloudflare/clef-flash"
 
@@ -20,17 +25,38 @@ class DecisionError(Exception):
 
 
 class WorkersAIClient:
-    def __init__(self, account_id, api_token, session=None, timeout=60):
+    """Safe to call from several threads at once: each thread keeps its own HTTP session."""
+
+    def __init__(self, account_id, api_token, timeout=60):
         self.url = CF_URL.format(account=account_id)
         self.headers = {"Authorization": f"Bearer {api_token}"}
-        self.session = session or requests.Session()
         self.timeout = timeout
+        self._local = threading.local()
 
-    def decide(self, state, images, questions):
+    @property
+    def session(self):
+        if not hasattr(self._local, "session"):
+            self._local.session = requests.Session()
+        return self._local.session
+
+    def decide(self, state, images, questions, retries=2):
         """Ask Clef-flash the questions about the JPEG images.
 
-        Returns (result, latency_ms), where result holds `answers`, `model` and `usage`.
+        Retries 429 ("capacity temporarily exceeded") and 5xx a few times with a short
+        backoff. Returns (result, latency_ms) where latency_ms is the successful call's
+        own time, and result holds `answers`, `model` and `usage`.
         """
+        for attempt in range(retries + 1):
+            try:
+                return self._call(state, images, questions)
+            except DecisionError as exc:
+                if not exc.retryable or attempt == retries:
+                    raise
+                delay = 0.5 * 2 ** attempt + random.uniform(0, 0.3)
+                log.info("retrying in %.1f s after: %s", delay, str(exc)[:120])
+                time.sleep(delay)
+
+    def _call(self, state, images, questions):
         body = {
             "model": "clef-flash",
             "state": state,

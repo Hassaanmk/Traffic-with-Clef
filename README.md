@@ -2,7 +2,9 @@
 
 London traffic cameras, judged by a vision decision model every 5 minutes, on a Kubernetes cluster that scales itself to zero between runs.
 
-Every 5 minutes a grabber checks TfL JamCam video clips. Each new clip goes onto a Redis queue. KEDA starts scorer pods only while clips are waiting. A scorer cuts 4 frames from the clip, asks [Clef-flash](https://developers.cloudflare.com/workers-ai/models/clef-flash/) on Cloudflare Workers AI seven questions about the road, and stores the answers in Postgres. Clips and frames are never saved.
+Every 5 minutes a grabber checks TfL JamCam video clips. Each new clip goes onto a Redis queue. KEDA starts scorer pods only while clips are waiting. A scorer cuts 4 frames from the clip and, in parallel, asks [Clef-flash](https://developers.cloudflare.com/workers-ai/models/clef-flash/) on Cloudflare Workers AI seven questions about all 4 frames together plus two short questions about each frame on its own. Every answer is streamed to the dashboard the moment it returns and stored in Postgres. Clips are never saved; frames stay in Redis for 6 hours so the dashboard can show them.
+
+![Architecture: grabber, Redis queue, KEDA, scorer pods, Clef-flash, Postgres and the live dashboard](docs/architecture.png)
 
 ```mermaid
 flowchart LR
@@ -39,9 +41,11 @@ The questions live in [`services/scorer/questions.yaml`](services/scorer/questio
 |---|---|
 | Clip | ~9.5 s, 352x288, 25 fps |
 | Tokens per frame | 102 (11 x 9 patches of 32x32, plus 3) |
-| Tokens per call | ~1,215 (4 frames + 808 for description and questions) |
-| Call latency | 1.5 to 13 s, high variance; Cloudflare quotes 39 ms model time |
-| Daily cost, 2 cameras | ~2,420 neurons, about 24% of the free 10,000 per day: $0 |
+| Tokens per clip call | ~1,215 (4 frames + 808 for description and 7 questions) |
+| Tokens per frame call | ~440 (1 frame + 2 questions) |
+| Tokens per clip, total | ~2,970 (1 clip call + 4 frame calls) |
+| Call latency | clip call median ~1.2 s, frame call median ~1.0 s, with spikes to 13 s; Cloudflare quotes 39 ms model time |
+| Daily cost, 2 cameras | ~5,900 neurons, about 59% of the free 10,000 per day: $0 |
 
 Results from the 24-hour run will be added here.
 
@@ -57,13 +61,15 @@ make grab                 # run the grabber now instead of waiting
 make logs                 # watch scorers
 make db                   # psql: select * from decisions;
 make dashboard            # live results page on http://localhost:8080
+make migrate              # apply db/migrations/*.sql (also run by make deploy)
+make test                 # unit tests and lint (needs requirements-dev.txt)
 make down                 # delete the cluster
 ```
 
 Cameras are set in [`deploy/k8s/config.yaml`](deploy/k8s/config.yaml). Find camera ids with:
 
 ```bash
-python -m venv .venv && .venv/bin/pip install -r requirements.txt
+python -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python spike/spike.py --find "hyde park"
 .venv/bin/python spike/spike.py --camera JamCams_00001.06514 --dry-run
 ```
@@ -77,7 +83,7 @@ python -m venv .venv && .venv/bin/pip install -r requirements.txt
 | scorer | Deployment, scaled by KEDA | One clip at a time per pod; finishes its clip on SIGTERM; retries 429 and 5xx up to 3 times |
 | KEDA | ScaledObject | One pod per waiting clip, 0 to 3, back to 0 after 2 min of empty queue |
 | Postgres | StatefulSet + 1 GiB volume | `decisions` table, unique per camera and clip, so retries never double-insert |
-| dashboard | Deployment + Service | Web page: live camera photo, Clef's latest answers, congestion chart, today's clips, neurons and latency; refreshes every 30 s |
+| dashboard | Deployment + Service | Live page: each clip's video, the 4 frames Clef saw with their answers and inference times as they stream in (Server-Sent Events from Redis pub/sub), a replay at real speed, congestion and latency charts |
 | Secrets | Secret | Cloudflare token copied from `.env`; Postgres password generated in the cluster |
 
 The scorer counts neurons per UTC day in Redis and pauses at 95% of the free allowance (`PAUSE_AT`, `DAILY_NEURON_LIMIT`).
@@ -93,6 +99,7 @@ deploy/kind/           kind cluster config
 deploy/k8s/            namespace, config, Redis, Postgres, grabber, scorer, dashboard
 deploy/keda/           ScaledObject (applied after KEDA is installed)
 spike/spike.py         day 1 test script: one clip in, answers out
+tests/                 unit tests (make test)
 Makefile
 ```
 

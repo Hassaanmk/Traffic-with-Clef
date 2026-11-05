@@ -1,0 +1,5 @@
+line-length = 120
+src = ["services/grabber", "services/scorer", "services/dashboard", "tests"]
+
+[lint]
+select = ["E", "F", "W", "B", "I"]

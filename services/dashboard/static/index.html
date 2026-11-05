@@ -4,300 +4,540 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Traffic with Clef</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230f172a'/%3E%3Crect x='7' y='19' width='4' height='6' rx='1' fill='%23fcd34d'/%3E%3Crect x='14' y='13' width='4' height='12' rx='1' fill='%23f59e0b'/%3E%3Crect x='21' y='7' width='4' height='18' rx='1' fill='%23ea580c'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@600;800&family=Overpass+Mono:wght@400;600&family=Public+Sans:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Fira+Sans:wght@400;500;600&display=swap">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
+/* Layout: an operations sheet. White surfaces, hairline borders, numbers in a monospaced face.
+   Colour is reserved for one thing, the congestion scale (grey to deep red), plus status. */
 :root {
-  --bg: #f4f6f5; --surface: #ffffff; --ink: #14201b; --muted: #58665f; --line: #d6ddd9;
-  --sign: #0e6a48; --amber: #b06400; --red: #b3261e; --track: #e6ebe8;
-  --cam-a: #0e6a48; --cam-b: #2a5a9a;
-  --hud-bg: #0b100e; --hud-chip: rgba(255, 255, 255, 0.16); --hud-ink: #ffffff;
-  --display: "Overpass", "Arial Narrow", system-ui, sans-serif;
-  --body: "Public Sans", system-ui, sans-serif;
-  --mono: "Overpass Mono", ui-monospace, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #0d1311; --surface: #151d19; --ink: #e2e9e5; --muted: #97a59e; --line: #2a3530;
-          --sign: #3aa97c; --amber: #f0a43c; --red: #ef8a83; --track: #222c27;
-          --cam-a: #3aa97c; --cam-b: #86ade3; color-scheme: dark; }
+  --page: #f5f6f8; --surface: #ffffff; --sunken: #f8fafc;
+  --ink: #0f172a; --ink-2: #334155; --muted: #64748b; --faint: #94a3b8;
+  --line: #e2e8f0; --line-2: #cbd5e1;
+  --accent: #1d4ed8; --accent-soft: #eff6ff;
+  --ok: #15803d; --ok-soft: #f0fdf4; --warn: #b45309; --warn-soft: #fffbeb; --bad: #b91c1c; --bad-soft: #fef2f2;
+  /* congestion 0 Empty .. 4 Standstill: one warm, ordered ramp */
+  --lvl-0: #cbd5e1; --lvl-1: #fcd34d; --lvl-2: #f59e0b; --lvl-3: #ea580c; --lvl-4: #b91c1c;
+  --sans: "Fira Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "Fira Code", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --radius: 8px;
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
-.wrap { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 20px; }
-header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
-h1 { font: 800 1.9rem/1.1 var(--display); margin: 0; }
-h2 { font: 800 1.15rem/1.2 var(--display); margin: 0; }
-.status { font: 0.82rem var(--mono); color: var(--muted); display: flex; align-items: center; gap: 8px; }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--sign); }
-.dot.stale { background: var(--amber); } .dot.down { background: var(--red); }
+body { margin: 0; background: var(--page); color: var(--ink); font: 14px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+.wrap { max-width: 1280px; margin: 0 auto; padding: 24px 16px 64px; display: flex; flex-direction: column; gap: 16px; }
+h1, h2, h3 { margin: 0; font-weight: 600; line-height: 1.2; }
+.num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.label { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+button { font: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
-.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
-.stat .k { font: 600 0.72rem var(--display); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.stat .v { font: 800 1.6rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
-.stat .s { font-size: 0.8rem; color: var(--muted); }
-.meter { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
-.meter i { display: block; height: 100%; background: var(--sign); }
+/* Header */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; padding-bottom: 4px; }
+.top h1 { font-size: 22px; letter-spacing: -0.01em; }
+.top p { margin: 2px 0 0; color: var(--muted); }
+.status { display: flex; align-items: center; gap: 16px; color: var(--muted); font-size: 13px; }
+.status .live { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.status .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.status .live.on i { background: var(--ok); }
+.status .live.off i { background: var(--warn); }
 
-.cams { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
-.cam { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
-.stage { position: relative; background: #000; }
+.alert { background: var(--bad-soft); border: 1px solid #fecaca; color: var(--bad); border-radius: var(--radius); padding: 10px 14px; }
+
+/* KPI strip: one instrument panel, not six cards */
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.kpi { padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi + .kpi { border-left: 1px solid var(--line); }
+.kpi .v { font: 500 22px/1.15 var(--mono); letter-spacing: -0.02em; }
+.kpi .s { font-size: 12px; color: var(--muted); }
+.gauge { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; margin: 2px 0; }
+.gauge i { display: block; height: 100%; background: var(--accent); }
+@media (max-width: 1000px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .kpi:nth-child(4) { border-left: 0; } .kpi:nth-child(n+4) { border-top: 1px solid var(--line); } }
+@media (max-width: 560px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpi { border-left: 0 !important; border-top: 1px solid var(--line); } .kpi:nth-child(-n+2) { border-top: 0; } .kpi:nth-child(even) { border-left: 1px solid var(--line) !important; } }
+
+/* Camera lanes */
+#lanes { display: flex; flex-direction: column; gap: 16px; }
+.lane { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.lane-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.lane-head h2 { font-size: 16px; }
+.lane-head .meta { color: var(--muted); font-size: 12px; }
+.lane-head .spacer { flex: 1; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: 4px; border: 1px solid; white-space: nowrap; }
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge.ok { color: var(--ok); background: var(--ok-soft); border-color: #bbf7d0; }
+.badge.busy { color: var(--warn); background: var(--warn-soft); border-color: #fde68a; }
+.badge.idle { color: var(--muted); background: var(--sunken); border-color: var(--line); }
+.btn { background: var(--surface); color: var(--ink); border: 1px solid var(--line-2); border-radius: 6px; padding: 5px 12px; font-size: 13px; font-weight: 500;
+       cursor: pointer; transition: background .15s, border-color .15s; }
+.btn:hover { background: var(--sunken); border-color: var(--faint); }
+.btn:disabled { color: var(--faint); cursor: default; }
+
+.lane-body { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+@media (max-width: 960px) { .lane-body { grid-template-columns: minmax(0, 1fr); } }
+.player { padding: 16px; display: flex; flex-direction: column; gap: 10px; border-right: 1px solid var(--line); min-width: 0; }
+@media (max-width: 960px) { .player { border-right: 0; border-bottom: 1px solid var(--line); } }
+.stage { position: relative; border-radius: 6px; overflow: hidden; background: #0f172a; }
 .stage video { width: 100%; aspect-ratio: 352 / 288; object-fit: cover; display: block; }
-/* A solid bar over TfL's burned-in camera name strip; the name is repeated in the card title. */
-.hud { position: absolute; left: 0; right: 0; bottom: 0; min-height: 11%; padding: 6px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-       background: var(--hud-bg); color: var(--hud-ink); }
-.hud.stale > * { opacity: 0.5; }
-.hud-level { font: 800 1.05rem var(--display); margin-right: 4px; }
-.hud .chip { font: 600 0.74rem var(--mono); background: var(--hud-chip); padding: 2px 7px; border-radius: 4px; }
-.flash { position: absolute; top: 44px; left: 50%; transform: translateX(-50%); font: 600 0.78rem var(--mono); white-space: nowrap;
-         background: var(--amber); color: #111; padding: 4px 10px; border-radius: 4px; }
-.timeline { padding: 10px 16px 0; display: flex; flex-direction: column; gap: 2px; }
-.track { position: relative; height: 22px; margin: 0 8px; }
-.track::before { content: ""; position: absolute; left: 0; right: 0; top: 10px; height: 2px; background: var(--track); }
-.tick { position: absolute; top: 2px; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%; border: 2px solid var(--muted);
-        background: var(--surface); color: var(--muted); font: 600 10px/14px var(--mono); text-align: center; font-style: normal; }
-.tick.hit { background: var(--amber); border-color: var(--amber); color: #111; }
-.head { position: absolute; top: 1px; width: 2px; height: 20px; margin-left: -1px; background: var(--sign); }
-.tl-caption { font: 0.74rem var(--mono); color: var(--muted); }
-.match { font: 600 0.74rem var(--mono); padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
-.match.ok { color: var(--sign); background: var(--track); }
-.match.new { color: var(--amber); background: var(--track); }
-.match.unknown { color: var(--muted); }
-.cam .body { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
-.cam .title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.cam .when { font: 0.78rem var(--mono); color: var(--muted); white-space: nowrap; }
-.cong { display: flex; flex-direction: column; gap: 6px; }
-.cong .row { display: flex; justify-content: space-between; align-items: baseline; }
-.cong .label { font: 800 1.35rem var(--display); }
-.cong .num { font: 600 0.85rem var(--mono); color: var(--muted); }
-.scale { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
-.scale i { height: 8px; border-radius: 2px; background: var(--track); }
-.scale i.on { background: var(--amber); }
-.probs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 16px; }
-.prob { display: flex; flex-direction: column; gap: 3px; font-size: 0.85rem; }
-.prob .row { display: flex; justify-content: space-between; }
-.prob .row b { font: 600 0.85rem var(--mono); }
+/* Covers TfL's burned-in camera-name strip; the name is in the lane header. */
+.hud { position: absolute; left: 0; right: 0; bottom: 0; min-height: 11%; padding: 6px 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px;
+       background: #0f172a; color: #e2e8f0; font: 12px var(--mono); }
+.hud b { color: #fff; font: 600 13px var(--sans); }
+.hud.stale > * { opacity: 0.45; }
+.flash { position: absolute; top: 10px; right: 10px; background: var(--surface); color: var(--ink); border-radius: 6px; padding: 8px 10px; min-width: 150px;
+         box-shadow: 0 1px 2px rgba(15,23,42,.12), 0 0 0 1px rgba(15,23,42,.06); }
+.flash .f1 { font-size: 11px; color: var(--muted); }
+.flash .f2 { display: flex; align-items: center; gap: 6px; font-weight: 600; margin-top: 2px; }
+.flash .f3 { font: 11px var(--mono); color: var(--muted); margin-top: 2px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex: none; }
 
-.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
-.chart { position: relative; height: 280px; }
-.tbl { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { font: 600 0.72rem var(--display); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
-th.n, td.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.empty { color: var(--muted); padding: 24px; text-align: center; }
-footer { font-size: 0.78rem; color: var(--muted); }
+.timeline { position: relative; height: 24px; margin: 2px 9px 0; }
+.timeline::before { content: ""; position: absolute; left: 0; right: 0; top: 11px; height: 2px; background: var(--line); }
+.timeline .tick { position: absolute; top: 3px; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%; border: 1.5px solid var(--line-2);
+                  background: var(--surface); color: var(--muted); font: 500 10px/15px var(--mono); text-align: center; font-style: normal; transition: all .15s; }
+.timeline .tick.hit { border-color: var(--ink); background: var(--ink); color: #fff; }
+.timeline .head { position: absolute; top: 0; width: 2px; height: 24px; margin-left: -1px; background: var(--accent); }
+.player .caption { font-size: 12px; color: var(--muted); }
+
+.infer { padding: 16px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.sec { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.sec .num { font-size: 12px; color: var(--muted); }
+.frames { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 560px) { .frames { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.fr { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; background: var(--surface); transition: border-color .15s; }
+.fr.playing { border-color: var(--ink); }
+.fr .thumb { position: relative; aspect-ratio: 352 / 288; background: var(--sunken); }
+.fr .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.fr .thumb .t { position: absolute; left: 4px; top: 4px; font: 500 10px var(--mono); background: var(--surface); color: var(--ink); padding: 0 4px; border-radius: 3px; }
+.fr .thumb .missing { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; color: var(--faint); }
+.fr.pending .thumb::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 35%, rgba(255,255,255,.55) 50%, transparent 65%);
+                            background-size: 250% 100%; animation: sweep 1.2s linear infinite; }
+@keyframes sweep { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+.fr figcaption { padding: 8px; display: flex; flex-direction: column; gap: 3px; min-height: 58px; }
+.fr .row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.fr .lvl { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fr .sub { font: 11px var(--mono); color: var(--muted); }
+.fr.pending .lvl { color: var(--warn); font-weight: 500; }
+.fr.failed .lvl { color: var(--bad); font-weight: 500; }
+
+.answers { border-top: 1px solid var(--line); padding-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 28px; }
+@media (max-width: 560px) { .answers { grid-template-columns: minmax(0, 1fr); } }
+.answers .cong { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-bottom: 10px; }
+.answers .cong .big { font-size: 20px; font-weight: 600; }
+.scale { display: flex; gap: 3px; }
+.scale i { width: 26px; height: 8px; border-radius: 2px; background: var(--line); }
+.dl { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.dl dt { color: var(--ink-2); }
+.dl dd { margin: 0; text-align: right; font: 13px var(--mono); }
+.dl .track { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.dl .track i { display: block; height: 100%; background: var(--ink-2); border-radius: 2px; }
+.waiting { color: var(--warn); }
+
+/* Charts and log */
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(440px, 100%), 1fr)); gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.panel h2 { font-size: 15px; }
+.panel .note { color: var(--muted); font-size: 12px; margin: 0; }
+.chart { position: relative; height: 260px; margin-top: 4px; }
+.tbl { overflow-x: auto; margin: 0 -16px -16px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 8px 16px; border-top: 1px solid var(--line); white-space: nowrap; }
+thead th { position: sticky; top: 0; background: var(--sunken); }
+tbody tr:hover { background: var(--sunken); }
+th.n, td.n { text-align: right; }
+td.n { font: 13px var(--mono); }
+.squares { display: inline-flex; gap: 3px; vertical-align: middle; }
+.squares i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.empty { color: var(--muted); padding: 32px; text-align: center; background: var(--surface); border: 1px dashed var(--line-2); border-radius: var(--radius); }
+footer { font-size: 12px; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .fr.pending .thumb::after { animation: none; } * { transition: none !important; } }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>Traffic with Clef</h1>
-    <div class="status"><span class="dot" id="dot"></span><span id="status">loading…</span></div>
+  <header class="top">
+    <div>
+      <h1>Traffic with Clef</h1>
+      <p>London JamCams, judged by Clef-flash every 5 minutes. Running on Kubernetes (kind) with KEDA.</p>
+    </div>
+    <div class="status">
+      <span class="live" id="conn"><i></i><span id="conn-text">Connecting</span></span>
+      <span>Next clips in <b class="num" id="next">-</b></span>
+    </div>
   </header>
 
-  <section class="stats" id="stats"></section>
-  <section class="cams" id="cams"><div class="empty">Waiting for the first scored clip.</div></section>
+  <div class="alert" id="alert" role="alert" hidden></div>
+  <section class="kpis" id="kpis" aria-label="Today"></section>
+  <section id="lanes"><div class="empty">Waiting for the first scored clip.</div></section>
 
-  <section class="panel">
-    <h2>Congestion, last 24 hours</h2>
-    <div class="chart"><canvas id="chart" aria-label="Congestion score per camera over time"></canvas></div>
+  <section class="grid2">
+    <div class="panel">
+      <h2>Congestion, last 24 hours</h2>
+      <p class="note">Whole-clip answer per camera. 0 Empty, 4 Standstill.</p>
+      <div class="chart"><canvas id="cong-chart" aria-label="Congestion per camera over time"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Inference time</h2>
+      <p class="note">One point per Clef-flash call, timed in the scorer pod: upload, model and network.</p>
+      <div class="chart"><canvas id="speed-chart" aria-label="Clef-flash call latency over time"></canvas></div>
+    </div>
   </section>
 
   <section class="panel">
-    <h2>Latest answers</h2>
+    <h2>Answer log</h2>
     <div class="tbl"><table>
-      <thead><tr><th>Captured (UTC)</th><th>Camera</th><th class="n">Congestion</th><th class="n">Moving</th><th class="n">Wet</th><th class="n">Blocked</th><th>Light</th><th class="n">Tokens</th><th class="n">Latency</th></tr></thead>
-      <tbody id="recent"></tbody>
+      <thead><tr><th class="label">Captured UTC</th><th class="label">Camera</th><th class="label">Congestion</th><th class="label">Frames 1-4</th>
+        <th class="label n">Moving</th><th class="label n">Wet</th><th class="label">Light</th><th class="label n">Clip call</th><th class="label n">Frame call</th><th class="label n">Tokens</th></tr></thead>
+      <tbody id="log"></tbody>
     </table></div>
   </section>
 
-  <footer>Answers from Clef-flash on Cloudflare Workers AI. Camera images: TfL JamCams, Powered by TfL Open Data. Refreshes every 30 s.</footer>
+  <footer>Clips: TfL JamCams, Powered by TfL Open Data. Answers: Clef-flash on Cloudflare Workers AI. Frames are kept 6 hours for this page and never stored in the database.</footer>
 </div>
 
 <script>
 const LEVELS = ["Empty", "Light", "Moderate", "Heavy", "Standstill"];
-const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const lvl = s => Math.max(0, Math.min(4, Math.round(s)));
+const lvlColor = s => css("--lvl-" + lvl(s));
+const sw = s => `<span class="sw" style="background:${lvlColor(s)}"></span>`;
 const pct = p => p == null ? "-" : Math.round(p * 100) + "%";
+const secs = ms => ms == null ? "-" : (ms / 1000).toFixed(2) + " s";
 const hhmm = iso => new Date(iso).toISOString().slice(11, 16);
-const ago = iso => {
-  const m = Math.round((Date.now() - new Date(iso)) / 60000);
-  return m < 1 ? "just now" : m < 60 ? m + " min ago" : Math.round(m / 60) + " h ago";
-};
+const hhmmss = iso => new Date(iso).toISOString().slice(11, 19);
+const ago = iso => { const m = Math.round((Date.now() - new Date(iso)) / 60000); return m < 1 ? "just now" : m < 60 ? m + " min ago" : Math.round(m / 60) + " h ago"; };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
-let chart;
-Chart.defaults.font.family = css("--body");
+const median = a => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+Chart.defaults.font.family = css("--sans");
+Chart.defaults.font.size = 12;
+Chart.defaults.color = css("--muted");
 
-function stat(k, v, s, meter) {
-  return `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span>` +
-    (meter != null ? `<div class="meter"><i style="width:${Math.min(100, meter)}%"></i></div>` : "") +
-    `<span class="s">${s}</span></div>`;
-}
+let frameTimes = [1.0, 3.5, 6.0, 8.5];
+const lanes = {};   // camera id -> lane (DOM + current view), kept across refreshes so videos keep playing
+let congChart, speedChart;
 
-function prob(label, p) {
-  return `<div class="prob"><div class="row"><span>${label}</span><b>${pct(p)}</b></div>` +
-    `<div class="meter"><i style="width:${(p || 0) * 100}%"></i></div></div>`;
-}
+// Play a camera's video only while it is on screen.
+const onScreen = new IntersectionObserver(entries => entries.forEach(e => {
+  const v = e.target;
+  if (e.isIntersecting) v.play().catch(() => {}); else v.pause();
+}), {threshold: 0.2});
 
-function renderStats(d) {
-  const t = d.today, used = t.neurons / t.neuron_limit * 100;
-  document.getElementById("stats").innerHTML =
-    stat("Clips today", t.clips.toLocaleString(), `${d.total_clips.toLocaleString()} since start`) +
-    stat("Neurons today", t.neurons.toLocaleString(), `${used.toFixed(1)}% of ${t.neuron_limit.toLocaleString()} free`, used) +
-    stat("Median call", t.latency_p50_ms ? (t.latency_p50_ms / 1000).toFixed(1) + " s" : "-", "Clef-flash, 4 frames") +
-    stat("p95 call", t.latency_p95_ms ? (t.latency_p95_ms / 1000).toFixed(1) + " s" : "-", "slowest 5% today") +
-    stat("Cost today", "$0", `${t.tokens.toLocaleString()} input tokens`);
-}
-
-// Cards are kept across refreshes so each video keeps playing; only the answers update.
-const cards = {};
-const FRAME_FALLBACK_DURATION = 9.5;
-
-function makeCard(c, frameTimes) {
-  const el = document.createElement("article");
-  el.className = "cam";
-  el.innerHTML = `
-    <div class="stage">
-      <video muted autoplay loop playsinline preload="auto"></video>
-      <div class="flash" hidden></div>
-      <div class="hud"></div>
-    </div>
-    <div class="timeline">
-      <div class="track">${frameTimes.map((t, i) => `<i class="tick" data-t="${t}">${i + 1}</i>`).join("")}<b class="head"></b></div>
-      <span class="tl-caption">frames sent to Clef: ${frameTimes.map(t => t.toFixed(1) + " s").join(", ")}</span>
-    </div>
-    <div class="body"></div>`;
-  document.getElementById("cams").append(el);
-  const card = {el, v: el.querySelector("video"), hud: el.querySelector(".hud"), flash: el.querySelector(".flash"),
-                body: el.querySelector(".body"), head: el.querySelector(".head"), ticks: [...el.querySelectorAll(".tick")], src: null};
-  const place = () => {
-    const dur = card.v.duration || FRAME_FALLBACK_DURATION;
-    card.ticks.forEach(t => t.style.left = (t.dataset.t / dur * 100) + "%");
+/* ---------- one view shape for "live from the scorer" and "from the database" ---------- */
+function viewFor(cam) {
+  const live = cam.live;
+  if (live && (live.state !== "done" || live.etag === cam.scored_etag)) return live;
+  return {
+    camera_id: cam.id, camera_name: cam.name, etag: cam.scored_etag, captured_at: cam.captured_at,
+    state: "done", total_ms: null,
+    frames: (cam.frame_answers || []).map(f => ({...f})),
+    clip: {status: "done", answers: cam.answers, latency_ms: cam.latency_ms},
   };
-  card.v.addEventListener("loadedmetadata", place);
-  place();
-  return card;
 }
 
-function tick() {
-  for (const card of Object.values(cards)) {
-    const v = card.v, dur = v.duration || FRAME_FALLBACK_DURATION, now = v.currentTime;
-    card.head.style.left = (now / dur * 100) + "%";
-    let hit = -1;
-    card.ticks.forEach((t, i) => {
-      const on = Math.abs(now - t.dataset.t) < 0.4;
-      t.classList.toggle("hit", on);
-      if (on) hit = i;
-    });
-    card.flash.hidden = hit < 0;
-    if (hit >= 0) card.flash.textContent = `frame ${hit + 1} of ${card.ticks.length} sent to Clef`;
-  }
-  requestAnimationFrame(tick);
-}
-requestAnimationFrame(tick);
-
-function renderCams(d) {
-  if (!d.cameras.length) return;
-  document.querySelector("#cams .empty")?.remove();
-  for (const c of d.cameras) {
-    const card = cards[c.id] ||= makeCard(c, d.frame_times);
-    const etag = c.live_etag || c.scored_etag;
-    if (card.src !== etag) {
-      card.src = etag;
-      card.v.poster = c.poster + "?v=" + etag;
-      card.v.src = c.video + "?v=" + etag;
-      card.v.play().catch(() => {});
-    }
-    const a = c.answers, s = a.congestion?.score ?? 0, lvl = Math.round(s);
-    const fresh = c.live_etag && c.live_etag === c.scored_etag;
-    const pending = c.live_etag && c.live_etag !== c.scored_etag;
-    const match = fresh ? `<span class="match ok">answers for this clip</span>`
-      : pending ? `<span class="match new">new clip, scoring…</span>`
-      : `<span class="match unknown">answers ${ago(c.scored_at)}</span>`;
-
-    card.hud.classList.toggle("stale", !!pending);
-    card.hud.innerHTML = `<span class="hud-level">${LEVELS[lvl]} ${s.toFixed(2)}/4</span>` +
-      `<span class="chip">moving ${pct(a.moving?.noul)}</span><span class="chip">wet ${pct(a.wet?.noul)}</span>` +
-      `<span class="chip">blocked ${pct(a.blocked?.noul)}</span><span class="chip">${a.light?.choice ?? "-"}</span>`;
-    card.body.innerHTML = `
-      <div class="title"><h2>${esc(c.name)}</h2>${match}</div>
-      <div class="cong">
-        <div class="row"><span class="label">${LEVELS[lvl]}</span><span class="num">congestion ${s.toFixed(2)} / 4 · scored ${ago(c.scored_at)}</span></div>
-        <div class="scale">${LEVELS.map((_, i) => `<i class="${i <= lvl ? "on" : ""}"></i>`).join("")}</div>
+/* ---------- lane DOM ---------- */
+function makeLane(cam) {
+  const el = document.createElement("article");
+  el.className = "lane";
+  el.innerHTML = `
+    <header class="lane-head">
+      <h2>${esc(cam.name)}</h2><span class="badge idle" data-role="tag"></span>
+      <span class="meta num" data-role="meta"></span><span class="spacer"></span>
+      <button class="btn" type="button" data-role="replay" title="Replay how Clef's answers came back for this clip, at their real speed">Replay inference</button>
+    </header>
+    <div class="lane-body">
+      <div class="player">
+        <div class="stage">
+          <video muted loop playsinline preload="metadata"></video>
+          <div class="flash" hidden></div>
+          <div class="hud"></div>
+        </div>
+        <div class="timeline" aria-hidden="true">${frameTimes.map((t, i) => `<i class="tick" data-t="${t}">${i + 1}</i>`).join("")}<b class="head"></b></div>
+        <span class="caption">The clip Clef scored. Markers show the frames sent to Clef.</span>
       </div>
-      <div class="probs">
-        ${prob("Moving", a.moving?.noul)}${prob("Wet road", a.wet?.noul)}
-        ${prob("Lane blocked", a.blocked?.noul)}${prob("View usable", a.usable?.noul)}
+      <div class="infer">
+        <div class="sec"><h3 class="label">Each frame on its own</h3><span class="num" data-role="frames-total"></span></div>
+        <div class="frames" data-role="frames"></div>
+        <div class="sec"><h3 class="label">All 4 frames together</h3><span class="num" data-role="clip-lat"></span></div>
+        <div class="answers" data-role="clip"></div>
       </div>
-      <div class="prob"><div class="row"><span>Light: <b>${a.light?.choice ?? "-"}</b></span>
-        <span>Heavy vehicles: <b>${(a.heavy_vehicles?.score ?? 0).toFixed(1)} / 3</b></span></div></div>`;
-  }
+    </div>`;
+  const q = r => el.querySelector(`[data-role="${r}"]`);
+  const lane = {el, cam, view: null, etag: null, src: null, startedAt: null, replaying: false,
+                v: el.querySelector("video"), hud: el.querySelector(".hud"), flash: el.querySelector(".flash"),
+                head: el.querySelector(".head"), ticks: [...el.querySelectorAll(".tick")], replayBtn: q("replay"),
+                tag: q("tag"), meta: q("meta"), framesEl: q("frames"), framesTotal: q("frames-total"),
+                clipEl: q("clip"), clipLat: q("clip-lat")};
+  const place = () => { const d = lane.v.duration || 9.5; lane.ticks.forEach(t => t.style.left = (t.dataset.t / d * 100) + "%"); };
+  lane.v.addEventListener("loadedmetadata", place); place();
+  onScreen.observe(lane.v);
+  lane.replayBtn.addEventListener("click", () => replay(lane));
+  return lane;
 }
 
-function renderChart(d) {
-  const colors = [css("--cam-a"), css("--cam-b"), css("--amber"), css("--red")];
-  const names = Object.fromEntries(d.cameras.map(c => [c.id, c.name]));
-  const datasets = Object.entries(d.series).map(([id, pts], i) => ({
-    label: names[id] || id,
-    data: pts.map(p => ({x: new Date(p.t).getTime(), y: p.congestion})),
-    borderColor: colors[i % colors.length], backgroundColor: colors[i % colors.length],
-    borderWidth: 2, pointRadius: 2, cubicInterpolationMode: "monotone",
+function frameFigures(lane, view) {
+  // Rebuild thumbnails only when the clip changes, so images don't flicker on every update.
+  lane.etag = view.etag;
+  lane.framesEl.innerHTML = view.frames.length ? view.frames.map(f => `
+    <figure class="fr" data-i="${f.i}">
+      <div class="thumb"><img src="/api/frame/${view.etag}/${f.i}" alt="Frame ${f.i + 1}, ${f.t} s into the clip"><span class="t">${f.t.toFixed(1)} s</span></div>
+      <figcaption></figcaption>
+    </figure>`).join("") : `<p class="caption" style="grid-column:1/-1;margin:0;color:var(--muted)">This clip was scored before per-frame answers existed. The next clip will have them.</p>`;
+  lane.framesEl.querySelectorAll("img").forEach(img => img.addEventListener("error", () => {
+    const m = document.createElement("span"); m.className = "missing"; m.textContent = "Frame expired";
+    img.parentNode.appendChild(m); img.remove();
   }));
-  const grid = css("--line"), ink = css("--muted");
-  if (!chart) {
-    chart = new Chart(document.getElementById("chart"), {
-      type: "line", data: {datasets},
-      options: {
-        maintainAspectRatio: false, animation: false, parsing: false,
-        interaction: {mode: "nearest", intersect: false},
-        scales: {
-          x: {type: "linear", grid: {color: grid}, ticks: {color: ink, maxTicksLimit: 12,
-              callback: v => new Date(v).toISOString().slice(11, 16)}},
-          y: {min: 0, max: 4, grid: {color: grid}, ticks: {color: ink, stepSize: 1, callback: v => LEVELS[v]}},
-        },
-        plugins: {
-          legend: {labels: {color: ink, boxWidth: 12}},
-          tooltip: {callbacks: {title: items => new Date(items[0].parsed.x).toISOString().slice(11, 16) + " UTC",
-                                label: i => `${i.dataset.label}: ${i.parsed.y.toFixed(2)}`}},
-        },
-      },
-    });
+}
+
+function renderFrame(fig, f) {
+  fig.className = "fr " + (f.status || "done");
+  const cap = fig.querySelector("figcaption");
+  if (f.status === "pending") {
+    cap.innerHTML = `<span class="lvl">Asking Clef</span><span class="sub timer">0.00 s</span>`;
+  } else if (f.status === "failed") {
+    cap.innerHTML = `<span class="lvl">No answer</span><span class="sub" title="${esc(f.error || "")}">${esc((f.error || "").slice(0, 24))}</span>`;
   } else {
-    chart.data.datasets = datasets;
-    chart.update();
+    const s = f.answers?.congestion?.score ?? 0;
+    cap.innerHTML = `<div class="row"><span class="lvl">${sw(s)}${LEVELS[lvl(s)]}</span><span class="sub">${s.toFixed(2)}</span></div>
+      <div class="row"><span class="sub">blocked ${pct(f.answers?.blocked?.noul)}</span><span class="sub" style="color:var(--ink)">${secs(f.latency_ms)}</span></div>`;
   }
 }
 
-function renderRecent(d) {
-  document.getElementById("recent").innerHTML = d.recent.map(r => {
-    const a = r.answers;
-    return `<tr><td>${hhmm(r.captured_at)}</td><td>${esc(r.camera)}</td>
-      <td class="n">${(a.congestion?.score ?? 0).toFixed(2)}</td><td class="n">${pct(a.moving?.noul)}</td>
-      <td class="n">${pct(a.wet?.noul)}</td><td class="n">${pct(a.blocked?.noul)}</td><td>${a.light?.choice ?? "-"}</td>
-      <td class="n">${r.tokens.toLocaleString()}</td><td class="n">${(r.latency_ms / 1000).toFixed(1)} s</td></tr>`;
+function row(label, p) {
+  return `<dl class="dl"><dt>${label}</dt><span class="track"><i style="width:${(p || 0) * 100}%"></i></span><dd>${pct(p)}</dd></dl>`;
+}
+
+function renderClip(lane, view) {
+  const c = view.clip || {};
+  if (c.status === "pending") {
+    lane.clipEl.innerHTML = `<div class="cong"><span class="waiting">Asking Clef about all 4 frames together</span><span class="num timer">0.00 s</span></div>`;
+    lane.clipLat.textContent = "";
+    return;
+  }
+  const a = c.answers || {}, s = a.congestion?.score ?? 0, l = lvl(s);
+  lane.clipLat.textContent = "answered in " + secs(c.latency_ms);
+  lane.clipEl.innerHTML = `
+    <div class="cong"><span class="big">${LEVELS[l]}</span>
+      <span class="scale" title="Congestion ${s.toFixed(2)} of 4">${LEVELS.map((_, i) => `<i style="${i <= l ? "background:" + lvlColor(i) : ""}"></i>`).join("")}</span>
+      <span class="num" style="color:var(--muted)">${s.toFixed(2)} / 4</span></div>
+    <div>${row("Vehicles moving", a.moving?.noul)}${row("Road wet", a.wet?.noul)}
+      <dl class="dl"><dt>Light</dt><span></span><dd>${a.light?.choice ?? "-"}</dd></dl></div>
+    <div>${row("Lane blocked", a.blocked?.noul)}${row("View usable", a.usable?.noul)}
+      <dl class="dl"><dt>Heavy vehicles</dt><span></span><dd>${(a.heavy_vehicles?.score ?? 0).toFixed(1)} / 3</dd></dl></div>`;
+  lane.hud.innerHTML = `<b>${LEVELS[l]} ${s.toFixed(2)}</b><span>moving ${pct(a.moving?.noul)}</span><span>wet ${pct(a.wet?.noul)}</span>` +
+    `<span>blocked ${pct(a.blocked?.noul)}</span><span>${a.light?.choice ?? "-"}</span>`;
+}
+
+function renderLane(lane, view) {
+  if (lane.etag !== view.etag) frameFigures(lane, view);
+  lane.view = view;
+  const figs = lane.framesEl.querySelectorAll(".fr");
+  view.frames.forEach((f, i) => figs[i] && renderFrame(figs[i], f));
+  renderClip(lane, view);
+
+  const done = view.frames.filter(f => f.status !== "pending" && f.latency_ms != null);
+  lane.framesTotal.textContent = view.state === "scoring"
+    ? `${done.length} of ${view.frames.length} answered`
+    : done.length ? `median ${secs(median(done.map(f => f.latency_ms)))}` + (view.total_ms ? `, all answers in ${secs(view.total_ms)}` : "") : "";
+  lane.meta.textContent = `captured ${hhmmss(view.captured_at)} UTC`;
+  lane.replayBtn.disabled = lane.replaying || view.state === "scoring" || !view.frames.length;
+  setTag(lane);
+}
+
+function setTag(lane) {
+  const view = lane.view, cam = lane.cam;
+  let cls = "ok", text = "Answers match this clip";
+  if (lane.replaying) [cls, text] = ["busy", "Replaying at real speed"];
+  else if (view.state === "scoring") [cls, text] = ["busy", "Scoring now"];
+  else if (view.state === "failed") [cls, text] = ["busy", "Last attempt failed, retrying"];
+  else if (cam.live_etag && cam.live_etag !== view.etag) [cls, text] = ["busy", "New clip, waiting to score"];
+  else if (!cam.live_etag) [cls, text] = ["idle", "Scored " + ago(cam.scored_at)];
+  lane.tag.className = "badge " + cls; lane.tag.textContent = text;
+  lane.hud.classList.toggle("stale", cls === "busy" && !lane.replaying && view.state !== "scoring");
+}
+
+function setVideo(lane, cam) {
+  const etag = cam.live_etag || cam.scored_etag;
+  if (lane.src === etag) return;
+  lane.src = etag;
+  lane.v.poster = cam.poster + "?v=" + etag;
+  lane.v.src = cam.video + "?v=" + etag;
+}
+
+/* ---------- live: events from the scorer, pushed over Server-Sent Events ---------- */
+function onEvent(state) {
+  const lane = lanes[state.camera_id];
+  if (!lane || lane.replaying) return;
+  if (state.event === "started") lane.startedAt = performance.now();
+  renderLane(lane, state);
+  if (state.event === "done") setTimeout(refresh, 800);
+}
+
+function replay(lane) {
+  const base = lane.view;
+  if (!base || !base.frames.length || lane.replaying) return;
+  lane.replaying = true;
+  const view = {...base, state: "scoring", frames: base.frames.map(f => ({...f, status: "pending"})), clip: {status: "pending"}};
+  lane.startedAt = performance.now();
+  renderLane(lane, view);
+  lane.v.currentTime = 0; lane.v.play().catch(() => {});
+  const steps = [...base.frames.map((f, i) => ({ms: f.latency_ms ?? 0, apply: () => { view.frames[i] = {...base.frames[i]}; }})),
+                 {ms: base.clip.latency_ms ?? 0, apply: () => { view.clip = base.clip; }}];
+  let left = steps.length;
+  steps.forEach(step => setTimeout(() => {
+    step.apply();
+    if (--left === 0) { view.state = "done"; lane.replaying = false; }
+    renderLane(lane, view);
+  }, step.ms));
+}
+
+function connect() {
+  const pill = document.getElementById("conn"), text = document.getElementById("conn-text");
+  const es = new EventSource("/api/events");
+  es.onopen = () => { pill.className = "live on"; text.textContent = "Live"; };
+  es.onerror = () => { pill.className = "live off"; text.textContent = "Reconnecting"; };
+  es.onmessage = e => { try { onEvent(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+}
+
+/* ---------- summary: KPIs, lanes, charts, log ---------- */
+function kpi(k, v, s, gauge) {
+  return `<div class="kpi"><span class="label">${k}</span><span class="v">${v}</span>` +
+    (gauge != null ? `<div class="gauge"><i style="width:${Math.min(100, gauge)}%"></i></div>` : "") + `<span class="s">${s}</span></div>`;
+}
+
+function renderKpis(d) {
+  const t = d.today, used = t.neurons / t.neuron_limit * 100;
+  document.getElementById("kpis").innerHTML =
+    kpi("Clips today", t.clips.toLocaleString(), `${d.total_clips.toLocaleString()} since start`) +
+    kpi("Frames judged", t.frames.toLocaleString(), "4 per clip") +
+    kpi("Clip call", secs(t.clip_p50_ms), `median, p95 ${secs(t.clip_p95_ms)}`) +
+    kpi("Frame call", secs(t.frame_p50_ms), "median, 1 frame each") +
+    kpi("Free allowance", used.toFixed(1) + "%", `${t.neurons.toLocaleString()} of ${t.neuron_limit.toLocaleString()} neurons`, used) +
+    kpi("Cost today", "$0.00", `${t.tokens.toLocaleString()} input tokens`);
+}
+
+function renderLanes(d) {
+  if (!d.cameras.length) return;
+  document.querySelector("#lanes .empty")?.remove();
+  for (const cam of d.cameras) {
+    const lane = lanes[cam.id] ||= (() => { const l = makeLane(cam); document.getElementById("lanes").append(l.el); return l; })();
+    lane.cam = cam;
+    setVideo(lane, cam);
+    const view = viewFor(cam);
+    // Don't let a periodic refresh overwrite a clip that is scoring right now or being replayed.
+    if (lane.replaying || (lane.view?.state === "scoring" && lane.view.etag !== view.etag)) { setTag(lane); continue; }
+    renderLane(lane, view);
+  }
+}
+
+function chartScales(yOpts) {
+  const grid = css("--line");
+  return {
+    x: {type: "linear", grid: {color: grid}, border: {color: css("--line-2")}, ticks: {maxTicksLimit: 8, callback: v => new Date(v).toISOString().slice(11, 16)}},
+    y: {grid: {color: grid}, border: {display: false}, ...yOpts},
+  };
+}
+
+function renderCharts(d) {
+  // Series differ by line style as well as colour, so they stay readable without colour.
+  const styles = [{color: css("--ink"), dash: []}, {color: css("--accent"), dash: [5, 4]}, {color: css("--lvl-3"), dash: [2, 3]}, {color: css("--muted"), dash: [8, 3, 2, 3]}];
+  const names = Object.fromEntries(d.cameras.map(c => [c.id, c.name]));
+  const series = Object.entries(d.series);
+  // Break the line where clips are missing for over 15 min, so a gap is never drawn as data.
+  const withGaps = pts => pts.flatMap((p, k) => {
+    const x = +new Date(p.t), point = {x, y: p.congestion};
+    return k && x - new Date(pts[k - 1].t) > 15 * 60000 ? [{x: x - 1, y: null}, point] : [point];
+  });
+  const cong = series.map(([id, pts], i) => {
+    const st = styles[i % styles.length];
+    return {label: names[id] || id, data: withGaps(pts), spanGaps: false, borderColor: st.color, backgroundColor: st.color,
+            borderDash: st.dash, borderWidth: 1.75, pointRadius: 0, pointHoverRadius: 3, cubicInterpolationMode: "monotone"};
+  });
+  const all = series.flatMap(([, pts]) => pts);
+  const speed = [
+    {label: "All 4 frames together", data: all.map(p => ({x: +new Date(p.t), y: p.latency_ms / 1000})),
+     backgroundColor: css("--ink"), pointStyle: "circle", pointRadius: 3},
+    {label: "One frame", data: all.flatMap(p => p.frame_latency_ms.map(ms => ({x: +new Date(p.t), y: ms / 1000}))),
+     backgroundColor: css("--accent"), pointStyle: "triangle", pointRadius: 3.5},
+  ];
+  const title = it => new Date(it[0].parsed.x).toISOString().slice(11, 16) + " UTC";
+  const legend = {position: "top", align: "end", labels: {boxWidth: 18, boxHeight: 2, usePointStyle: false}};
+  if (!congChart) {
+    congChart = new Chart(document.getElementById("cong-chart"), {type: "line", data: {datasets: cong},
+      options: {maintainAspectRatio: false, animation: false, parsing: false, interaction: {mode: "nearest", intersect: false},
+        scales: chartScales({min: 0, max: 4, ticks: {stepSize: 1, callback: v => LEVELS[v]}}),
+        plugins: {legend, tooltip: {callbacks: {title, label: i => `${i.dataset.label}: ${i.parsed.y.toFixed(2)}`}}}}});
+    speedChart = new Chart(document.getElementById("speed-chart"), {type: "scatter", data: {datasets: speed},
+      options: {maintainAspectRatio: false, animation: false, parsing: false,
+        scales: chartScales({min: 0, ticks: {callback: v => v + " s"}}),
+        plugins: {legend: {position: "top", align: "end", labels: {usePointStyle: true, pointStyleWidth: 9, boxHeight: 6}},
+                  tooltip: {callbacks: {title, label: i => `${i.dataset.label}: ${i.parsed.y.toFixed(2)} s`}}}}});
+  } else {
+    congChart.data.datasets = cong; congChart.update();
+    speedChart.data.datasets = speed; speedChart.update();
+  }
+}
+
+function renderLog(d) {
+  document.getElementById("log").innerHTML = d.recent.map(r => {
+    const a = r.answers, s = a.congestion?.score ?? 0, fr = r.frame_answers || [];
+    const fl = fr.filter(f => f.latency_ms != null).map(f => f.latency_ms);
+    const squares = fr.length ? `<span class="squares">${fr.map(f => { const v = f.answers?.congestion?.score;
+        return `<i title="Frame ${f.i + 1}: ${v == null ? "no answer" : LEVELS[lvl(v)] + " " + v.toFixed(2)}" style="background:${v == null ? "transparent;outline:1px dashed var(--line-2)" : lvlColor(v)}"></i>`; }).join("")}</span>`
+      : `<span style="color:var(--faint)">clip only</span>`;
+    return `<tr><td class="num">${hhmm(r.captured_at)}</td><td>${esc(r.camera)}</td>
+      <td><span style="display:inline-flex;align-items:center;gap:6px">${sw(s)}<span class="num">${s.toFixed(2)}</span></span></td><td>${squares}</td>
+      <td class="n">${pct(a.moving?.noul)}</td><td class="n">${pct(a.wet?.noul)}</td><td>${a.light?.choice ?? "-"}</td>
+      <td class="n">${secs(r.latency_ms)}</td><td class="n">${fl.length ? secs(median(fl)) : "-"}</td><td class="n">${r.tokens.toLocaleString()}</td></tr>`;
   }).join("");
 }
 
 async function refresh() {
-  const dot = document.getElementById("dot"), status = document.getElementById("status");
   try {
     const resp = await fetch("/api/summary", {cache: "no-store"});
     if (!resp.ok) throw new Error((await resp.json()).error || resp.status);
     const d = await resp.json();
-    renderStats(d); renderCams(d); renderChart(d); renderRecent(d);
-    const last = d.cameras.map(c => c.scored_at).sort().pop();
-    const stale = last && Date.now() - new Date(last) > 12 * 60000;
-    dot.className = "dot" + (stale ? " stale" : "");
-    status.textContent = last ? `last clip scored ${ago(last)}` + (stale ? ", check the pipeline" : "") : "no clips yet";
+    frameTimes = d.frame_times;
+    renderKpis(d); renderLanes(d); renderCharts(d); renderLog(d);
+    document.getElementById("alert").hidden = true;
   } catch (e) {
-    dot.className = "dot down";
-    status.textContent = "can't reach the database: " + e.message;
+    console.error(e);
+    const alert = document.getElementById("alert");
+    alert.hidden = false;
+    alert.textContent = "Couldn't update the page: " + e.message + ". Retrying every 30 s.";
   }
 }
+
+/* ---------- every animation frame: playhead, frame highlights, running timers, countdown ---------- */
+function loop() {
+  const now = performance.now();
+  for (const lane of Object.values(lanes)) {
+    const v = lane.v, dur = v.duration || 9.5, t = v.currentTime;
+    lane.head.style.left = (t / dur * 100) + "%";
+    let hit = -1;
+    lane.ticks.forEach((tk, i) => { const on = Math.abs(t - tk.dataset.t) < 0.45; tk.classList.toggle("hit", on); if (on) hit = i; });
+    lane.framesEl.querySelectorAll(".fr").forEach((fig, i) => fig.classList.toggle("playing", i === hit));
+    const f = hit >= 0 ? lane.view?.frames?.[hit] : null;
+    lane.flash.hidden = !f;
+    if (f) {
+      const s = f.answers?.congestion?.score;
+      lane.flash.innerHTML = `<div class="f1">Frame ${hit + 1} of ${lane.ticks.length}, ${f.t.toFixed(1)} s</div>` +
+        (f.status === "pending" ? `<div class="f2" style="color:var(--warn)">Asking Clef</div>`
+          : s == null ? `<div class="f2" style="color:var(--muted)">No per-frame answer</div>`
+          : `<div class="f2">${sw(s)}${LEVELS[lvl(s)]} <span class="num" style="font-weight:400;color:var(--muted)">${s.toFixed(2)}</span></div><div class="f3">answered in ${secs(f.latency_ms)}</div>`);
+    }
+    if (lane.startedAt && lane.view?.state === "scoring")
+      lane.el.querySelectorAll(".timer").forEach(el => el.textContent = ((now - lane.startedAt) / 1000).toFixed(2) + " s");
+  }
+  const next = new Date(); next.setUTCSeconds(0, 0); next.setUTCMinutes(Math.floor(next.getUTCMinutes() / 5) * 5 + 5);
+  const left = Math.max(0, Math.round((next - Date.now()) / 1000));
+  document.getElementById("next").textContent = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+  requestAnimationFrame(loop);
+}
+
 refresh();
+connect();
 setInterval(refresh, 30000);
+requestAnimationFrame(loop);
 </script>
 </body>
 </html>
